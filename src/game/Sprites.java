@@ -1,51 +1,80 @@
 package game;
 
-import java.awt.*;
-import java.awt.geom.*;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
 
-/** Portals, shadows and blood, drawn with Java2D shapes (characters: PixelSprites; items and projectiles: PixelArt). */
+/** Pixel-art drop shadows and blood (characters live in PixelSprites; items, projectiles and portals in PixelArt). */
 final class Sprites {
     private Sprites() {}
 
-    private static final Color SHADOW = new Color(0, 0, 0, 110);
+    private static final Map<String, BufferedImage> CACHE = new HashMap<>();
+    private static final Map<Character, Color> BLOOD = Map.of('r', new Color(150, 22, 22), 'd', new Color(92, 12, 12));
 
-    private static BasicStroke stroke(double w) {
-        return new BasicStroke((float) w, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-    }
+    private static int lightLevel(double light) { return (int) Math.round(Math.max(0, Math.min(1.5, light)) * 8); }
 
+    /** An oval of checkerboard black pixels: the classic see-through shadow. 'w' is the width in panel pixels. */
     static void shadow(Graphics2D g, double sx, double sy, double w) {
-        g.setColor(SHADOW);
-        g.fill(new Ellipse2D.Double(sx - w / 2, sy - w / 4, w, w / 2));
+        int cw = Math.max(4, (int) Math.round(w / GamePanel.PX)) & ~1, ch = Math.max(2, cw / 2);
+        BufferedImage img = CACHE.computeIfAbsent("s" + cw, k -> {
+            BufferedImage im = new BufferedImage(cw, ch, BufferedImage.TYPE_INT_ARGB);
+            double rx = cw / 2.0, ry = ch / 2.0;
+            for (int y = 0; y < ch; y++) {
+                for (int x = 0; x < cw; x++) {
+                    double nx = (x + 0.5 - rx) / rx, ny = (y + 0.5 - ry) / ry;
+                    if (nx * nx + ny * ny <= 1 && ((x + y) & 1) == 0) im.setRGB(x, y, 0xFF000000);
+                }
+            }
+            return im;
+        });
+        PixelSprites.blitCentered(g, img, sx, sy, 1);
     }
 
-    static void portal(Graphics2D g, double sx, double sy, double time, boolean hovered) {
-        double h = 66, w = 32, cy = sy - h / 2 - 4;
-        g.setColor(new Color(60, 120, 255, 70));
-        g.fill(new Ellipse2D.Double(sx - 26, sy - 10, 52, 20));
-        g.setPaint(new RadialGradientPaint(new Point2D.Double(sx, cy), 44f, new float[]{0f, 0.55f, 1f},
-                new Color[]{new Color(200, 230, 255, 200), new Color(60, 120, 255, 120), new Color(20, 40, 160, 0)}));
-        g.fill(new Ellipse2D.Double(sx - 44, cy - 44, 88, 88));
-        Ellipse2D oval = new Ellipse2D.Double(sx - w / 2, cy - h / 2, w, h);
-        g.setPaint(new RadialGradientPaint(new Point2D.Double(sx, cy), (float) (h / 2), new float[]{0f, 0.7f, 1f},
-                new Color[]{new Color(230, 245, 255), new Color(70, 130, 255), new Color(20, 40, 170)}));
-        g.fill(oval);
-        Shape oldClip = g.getClip();
-        g.clip(oval);
-        g.setStroke(stroke(2.5));
-        for (int k = 0; k < 4; k++) {
-            double r = 8 + k * 7;
-            g.setColor(new Color(255, 255, 255, 150 - k * 25));
-            g.draw(new Arc2D.Double(sx - r * 0.6, cy - r, r * 1.2, r * 2, time * 240 * (k % 2 == 0 ? 1 : -1) + k * 70, 110, Arc2D.OPEN));
+    /** A ragged blood splat: dark center, red rim, a few stray droplets. Deterministic for a given seed. */
+    private static String[] splat(int rx, int ry, long seed, int drops) {
+        Random r = new Random(seed);
+        double[] jitter = new double[12];
+        for (int i = 0; i < jitter.length; i++) jitter[i] = r.nextDouble() * 0.4 - 0.12;
+        int w = rx * 2 + 7, h = ry * 2 + 5;
+        double cx = w / 2.0, cy = h / 2.0;
+        char[][] grid = new char[h][w];
+        for (char[] row : grid) Arrays.fill(row, '.');
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                double nx = (x + 0.5 - cx) / rx, ny = (y + 0.5 - cy) / ry, d = Math.hypot(nx, ny);
+                int sector = (int) ((Math.atan2(ny, nx) + Math.PI) / (Math.PI * 2) * 12) % 12;
+                if (d < 1 + jitter[sector]) grid[y][x] = d < 0.55 ? 'd' : 'r';
+            }
         }
-        g.setClip(oldClip);
-        g.setStroke(stroke(hovered ? 3 : 2));
-        g.setColor(hovered ? new Color(255, 255, 255) : new Color(150, 200, 255));
-        g.draw(oval);
+        for (int k = 0; k < drops; k++) {
+            double a = r.nextDouble() * Math.PI * 2, dist = 1.3 + r.nextDouble() * 0.5;
+            int x = (int) Math.floor(cx + Math.cos(a) * rx * dist), y = (int) Math.floor(cy + Math.sin(a) * ry * dist);
+            if (x >= 0 && y >= 0 && x < w && y < h) grid[y][x] = 'r';
+        }
+        String[] rows = new String[h];
+        for (int y = 0; y < h; y++) rows[y] = new String(grid[y]);
+        return rows;
+    }
+
+    private static void drawSplat(Graphics2D g, double sx, double sy, int rx, int ry, int variant, int drops, double light) {
+        int lvl = lightLevel(light);
+        String key = "b" + rx + 'x' + ry + '|' + variant + '|' + lvl;
+        BufferedImage img = CACHE.computeIfAbsent(key,
+                k -> PixelSprites.bake(splat(rx, ry, variant * 7919L + rx * 31L + ry, drops), BLOOD, lvl / 8.0, null));
+        PixelSprites.blitCentered(g, img, sx, sy, 1);
     }
 
     static void blood(Graphics2D g, Decal d, double sx, double sy, double light) {
-        g.setColor(Shade.of(new Color(110, 0, 0, 170), light));
-        double s = d.size;
-        g.fill(new Ellipse2D.Double(sx - 5 * s, sy - 2 * s, 10 * s, 4 * s));
+        int big = d.size >= 1.1 ? 1 : 0;
+        drawSplat(g, sx, sy, 1 + big, 1, System.identityHashCode(d) & 3, 2 + big, light);
+    }
+
+    /** The larger pool left under a corpse. */
+    static void pool(Graphics2D g, double sx, double sy, double scale, double light, int variant) {
+        drawSplat(g, sx, sy, (int) Math.round(6 * scale), (int) Math.round(2.5 * scale), variant & 3, 4, light);
     }
 }

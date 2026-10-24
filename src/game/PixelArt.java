@@ -296,6 +296,81 @@ final class PixelArt {
         return img;
     }
 
+    private static final int PORTAL_FRAMES = 8;
+    private static final Map<Character, Color> PORTAL_COLORS = Map.of(
+            'W', new Color(250, 250, 255), 'C', new Color(140, 220, 255), 'B', new Color(60, 130, 255),
+            'D', new Color(30, 50, 170), 'R', new Color(150, 215, 255), 'r', new Color(80, 150, 255));
+
+    /** One frame of the swirling portal oval: spiral bands that rotate as the frame advances. */
+    private static String[] portalFrame(int frame) {
+        int w = 17, h = 33;
+        double cx = (w - 1) / 2.0, cy = (h - 1) / 2.0, rx = w / 2.0, ry = h / 2.0;
+        String[] rows = new String[h];
+        for (int y = 0; y < h; y++) {
+            StringBuilder sb = new StringBuilder();
+            for (int x = 0; x < w; x++) {
+                double nx = (x - cx) / rx, ny = (y - cy) / ry, d = Math.hypot(nx, ny);
+                double ang = Math.atan2(ny, nx);
+                char c;
+                if (d > 1) {
+                    c = '.';
+                } else if (d > 0.84) {
+                    int spot = (int) Math.floor((ang + Math.PI) / (Math.PI * 2) * 24);
+                    c = (spot + frame * 3) % 8 == 0 ? 'W' : 'R';
+                } else if (d < 0.16) {
+                    c = 'W';
+                } else {
+                    double v = d * 2.2 + ang / (Math.PI * 2) * 2 - frame / (double) PORTAL_FRAMES;
+                    int band = Math.floorMod((int) Math.floor(v * 3), 4);
+                    c = switch (band) {
+                        case 0 -> 'D';
+                        case 1, 3 -> 'B';
+                        default -> d < 0.45 ? 'W' : 'C';
+                    };
+                }
+                sb.append(c);
+            }
+            rows[y] = sb.toString();
+        }
+        return rows;
+    }
+
+    /** A flat ring of glowing runes on the floor beneath the portal. */
+    private static String[] portalBase(int frame) {
+        int w = 27, h = 9;
+        double cx = (w - 1) / 2.0, cy = (h - 1) / 2.0;
+        String[] rows = new String[h];
+        for (int y = 0; y < h; y++) {
+            StringBuilder sb = new StringBuilder();
+            for (int x = 0; x < w; x++) {
+                double nx = (x - cx) / (w / 2.0), ny = (y - cy) / (h / 2.0), d = Math.hypot(nx, ny);
+                int spot = (int) Math.floor((Math.atan2(ny, nx) + Math.PI) / (Math.PI * 2) * 16);
+                if (d <= 1 && d > 0.78) sb.append((spot + frame) % 4 == 0 ? 'R' : 'r');
+                else if (d <= 0.45 && (x + y + frame) % 3 == 0) sb.append('r');
+                else sb.append('.');
+            }
+            rows[y] = sb.toString();
+        }
+        return rows;
+    }
+
+    static void portal(Graphics2D g, double sx, double sy, double time, boolean hovered) {
+        int frame = (int) (time * 10) % PORTAL_FRAMES;
+        String baseKey = "portalBase" + frame, key = "portal" + frame + hovered;
+        BufferedImage base = CACHE.get(baseKey), img = CACHE.get(key);
+        if (base == null) {
+            base = PixelSprites.bake(portalBase(frame), PORTAL_COLORS, 1, null);
+            CACHE.put(baseKey, base);
+        }
+        if (img == null) {
+            img = PixelSprites.bake(portalFrame(frame), PORTAL_COLORS, 1, hovered ? Color.WHITE : new Color(20, 30, 120));
+            CACHE.put(key, img);
+        }
+        PixelSprites.blitCentered(g, base, sx, sy, 1);
+        double bob = Math.sin(time * 3) * GamePanel.PX; // hovers gently above the runes
+        PixelSprites.blitCentered(g, img, sx, sy - img.getHeight() * GamePanel.PX / 2.0 - 6 + bob, 1);
+    }
+
     static void projectile(Graphics2D g, Projectile p, double sx, double sy, double time) {
         double y = sy - p.z;
         switch (p.kind) {

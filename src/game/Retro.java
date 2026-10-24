@@ -15,6 +15,7 @@ final class Retro {
             0x7C7464, 0x3A3632,                     // stone
             0x961818, 0x5A0C0C,                     // blood
             0xCEBC96, 0x8C3E2D,                     // plaster, roof
+            0x9AD8FF,                               // ice / magic
     };
     private static final int SPREAD = 30;
     private static final int[] LUT = new int[1 << 15];

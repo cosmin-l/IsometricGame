@@ -635,9 +635,7 @@ final class PixelSprites {
 
     /** A dead monster: its own idle frame, knocked onto its side, over a pool of blood. */
     static void corpse(Graphics2D g, Decal dc, double sx, double sy, double light) {
-        double s = dc.size;
-        g.setColor(Shade.of(new Color(90, 0, 0), light));
-        g.fill(new java.awt.geom.Ellipse2D.Double(sx - 16 * s, sy - 6 * s, 32 * s, 12 * s));
+        Sprites.pool(g, sx, sy, dc.size, light, System.identityHashCode(dc));
         if (dc.type == null) return;
         Design d = design(dc.type);
         int lvl = lightLevel(light * 0.7);

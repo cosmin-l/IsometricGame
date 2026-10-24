@@ -1262,9 +1262,13 @@ public class GamePanel extends JPanel implements MouseListener, MouseMotionListe
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         for (Particle p : particles) {
             double sx = Iso.sx(p.x, p.y) - camX, sy = Iso.sy(p.x, p.y) - camY - p.z;
+            // Solid palette pixels on the retro grid: they darken with age, then flicker out.
             double a = p.life / p.maxLife;
-            g.setColor(Shade.alpha(p.color, Math.min(1, a * 1.5)));
-            g.fill(new Ellipse2D.Double(sx - p.size / 2, sy - p.size / 2, p.size, p.size));
+            if (a < 0.3 && ((int) (time * 30) & 1) == 0) continue;
+            Color c = a < 0.55 ? p.color.darker() : p.color;
+            g.setColor(new Color(Retro.nearest(c.getRGB())));
+            int s = (p.size >= 4 ? 2 : 1) * PX;
+            g.fillRect((int) Math.round(sx / PX) * PX, (int) Math.round(sy / PX) * PX, s, s);
         }
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
         for (FloatingText t : texts) {
@@ -1497,7 +1501,7 @@ public class GamePanel extends JPanel implements MouseListener, MouseMotionListe
         } else if (e instanceof Npc n) {
             PixelSprites.npc(g, n, sx, sy, Math.max(0.5, lightAt(n.x, n.y)), n == hoveredNpc);
         } else if (e instanceof Portal pt) {
-            Sprites.portal(g, sx, sy, time, pt == hoveredPortal);
+            PixelArt.portal(g, sx, sy, time, pt == hoveredPortal);
         } else if (e instanceof Projectile pr) {
             PixelArt.projectile(g, pr, sx, sy, time);
         }
